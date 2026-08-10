@@ -51,7 +51,7 @@
             #define LOG(...) printf(__VA_ARGS__)
         #endif
     #else
-        #define LOG printf
+        #define LOG(...)
     #endif
 #endif
 

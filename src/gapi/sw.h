@@ -9,12 +9,12 @@
 
 //#define DITHER_FILTER
 
-#if defined(_OS_LINUX) || defined(_OS_TNS)
+#if defined(_OS_LINUX) || defined(_OS_TNS) || defined(SF2000) || defined(GB300V2)
     #define COLOR_16
 #endif
 
 #ifdef COLOR_16
-    #if defined(_OS_LINUX) || defined(_OS_TNS)
+    #if defined(_OS_LINUX) || defined(_OS_TNS) || defined(SF2000) || defined(GB300V2)
         #define COLOR_FMT_565
         #define CONV_COLOR(r,g,b) (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
     #else
@@ -40,7 +40,7 @@ namespace GAPI {
     #else
         typedef uint32 ColorSW;
     #endif
-    typedef uint16 DepthSW;
+    typedef uint32 DepthSW;
 
     uint8   *swLightmap;
     uint8   swLightmapNone[32 * 256];
@@ -249,7 +249,7 @@ namespace GAPI {
 
     void resize() {
         delete[] swDepth;
-        //swDepth = new DepthSW[Core::width * Core::height];
+        swDepth = new DepthSW[Core::width * Core::height];
     }
 
     inline mat4::ProjRange getProjRange() {
@@ -292,7 +292,7 @@ namespace GAPI {
         }
 
         if (depth) {
-            //memset(swDepth, 0xFF, Core::width * Core::height * sizeof(DepthSW));
+            memset(swDepth, 0xFF, Core::width * Core::height * sizeof(DepthSW));
         }
     }
 
@@ -386,49 +386,56 @@ namespace GAPI {
         if (f == 0) return;
 
         VertexSW dS = (R - L) / f;
-        VertexSW S  = L;
+
+        int32 sz = L.z, su = L.u, sv = L.v, sl = L.l;
+        int32 dsz = dS.z, dsu = dS.u, dsv = dS.v, dsl = dS.l;
 
         if (x1 < swClipRect.x) {
-            x1 = swClipRect.x - x1;
-            S.z += dS.z * x1;
-            step(S, dS, x1);
+            int32 diff = swClipRect.x - x1;
+            sz += dsz * diff;
+            su += dsu * diff;
+            sv += dsv * diff;
+            sl += dsl * diff;
             x1 = swClipRect.x;
         }
         if (x2 > swClipRect.z) x2 = swClipRect.z;
 
         int32 i = y * Core::width;
+        DepthSW* pDepth = &swDepth[i + x1];
+        ColorSW* pColor = &swColor[i + x1];
 
     #ifdef DITHER_FILTER
         const int *dithY = uvDither + ((y & 1) * 4);
     #endif
 
-        for (int x = i + x1; x < i + x2; x++) {
-            S.z += dS.z;
+        for (int x = x1; x < x2; x++) {
+            sz += dsz;
+            DepthSW z = DepthSW(uint32(sz) >> 16);
 
-            DepthSW z = DepthSW(uint32(S.z) >> 16);
-
-            {//if (swDepth[x] >= z) {
+            if (*pDepth >= z) {
             #ifdef DITHER_FILTER
                 const int *dithX = dithY + (x & 1);
-
-                uint32 u = uint32(S.u + dithX[0]) >> 16;
-                uint32 v = uint32(S.v + dithX[2]) >> 16;
+                uint32 u = uint32(su + dithX[0]) >> 16;
+                uint32 v = uint32(sv + dithX[2]) >> 16;
             #else
-                uint32 u = uint32(S.u) >> 16;
-                uint32 v = uint32(S.v) >> 16;
+                uint32 u = uint32(su) >> 16;
+                uint32 v = uint32(sv) >> 16;
             #endif
 
                 uint8 index = curTile->index[(v << 8) + u];
 
                 if (index != 0) {
-                    index = swLightmap[((S.l >> (16 + 3)) << 8) + index];
-
-                    swColor[x] = swPalette[index];
-                    //swDepth[x] = z;
+                    index = swLightmap[((sl >> 11) & ~0xFF) + index];
+                    *pColor = swPalette[index];
+                    *pDepth = z;
                 }
             }
 
-            step(S, dS);
+            su += dsu;
+            sv += dsv;
+            sl += dsl;
+            pDepth++;
+            pColor++;
         }
     }
 
