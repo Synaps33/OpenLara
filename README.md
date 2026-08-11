@@ -17,10 +17,10 @@ The original software renderer struggled with performance and visual glitches on
 * **START** - Inventory
 
 ## How to play
-1. Put the compiled core file (`openlara.sf2k`) into your `cores` folder on the SD card.
+1. Put the compiled core file (`core_87000000`) into your `cores` folder on the SD card.
 2. Copy your Tomb Raider 1 level files (`.PHD` format, like `LEVEL1.PHD`) to your SD card (for example into the `roms` folder).
 3. Launch the `.PHD` file from the console menu and give it a few seconds to load.
 
 ***
-
+Change name to core_87000000 
 *(Based on the original OpenLara project by XProger)*
