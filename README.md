@@ -1,27 +1,26 @@
-# OpenLara
-Classic Tomb Raider open-source engine
+# OpenLara for SF2000 & GB300
+This is a custom port of the classic Tomb Raider engine (OpenLara) specifically optimized for the Data Frog SF2000 and GB300 retro handheld consoles. 
 
-[WebGL build with demo level](http://xproger.info/projects/OpenLara/)
+The original software renderer struggled with performance and visual glitches on this low-end hardware. I've heavily modified the inner rendering loop and properly implemented the Z-buffer memory allocation so the game runs smooth and you no longer see objects clipping through walls. 
 
-[Standalone version](https://github.com/XProger/OpenLara/releases/tag/latest)
+## Key Features
+* Fully working Z-buffer (depth sorting is fixed).
+* Hardware-specific optimizations (using CPU registers instead of slow RAM reads) to keep the framerate playable.
+* Default resolution locked at 50% for optimal performance.
+* Pre-configured controls for the SF2000/GB300 layout.
 
-[Roadmap](https://github.com/XProger/OpenLara/issues/353)
+## Controls
+* **D-Pad** - Movement
+* **R** - Action / Shoot
+* **L** - Walk (prevents falling off edges)
+* **SELECT** - Look around / Side-step
+* **START** - Inventory
 
-[![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)](https://opensource.org/licenses/BSD-2-Clause)  
+## How to play
+1. Put the compiled core file (`openlara.sf2k`) into your `cores` folder on the SD card.
+2. Copy your Tomb Raider 1 level files (`.PHD` format, like `LEVEL1.PHD`) to your SD card (for example into the `roms` folder).
+3. Launch the `.PHD` file from the console menu and give it a few seconds to load.
 
-## Links
-[![Twitter](https://badgen.net/badge/icon/twitter?icon=twitter&label)](https://twitter.com/XProger_san)
-[![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/EF8JaQB)
-[![Telegram](https://badgen.net/badge/icon/telegram?icon=telegram&label)](https://t.me/openlara)
-* [YouTube channel](https://www.youtube.com/c/TimurGagiev)
-* [Tomb Raider Forums thread](http://www.tombraiderforums.com/showthread.php?t=216618)
+***
 
-## Screenshots
-![Waterfall](http://xproger.info/projects/OpenLara/shots/waterfall.jpg)
-![Double-aim](http://xproger.info/projects/OpenLara/shots/multi-aim.jpg)
-![Caustics](http://xproger.info/projects/OpenLara/shots/caustics.jpg)
-![Cutscene](http://xproger.info/projects/OpenLara/shots/cut1.jpg)
-![Cistern](http://xproger.info/projects/OpenLara/shots/flipmap.jpg)
-![Opera](http://xproger.info/projects/OpenLara/shots/tr2_opera.jpg)
-![Unwater](http://xproger.info/projects/OpenLara/shots/tr2_unwater1.jpg)
-![Temple](http://xproger.info/projects/OpenLara/shots/tr3_temple.jpg)
+*(Based on the original OpenLara project by XProger)*
