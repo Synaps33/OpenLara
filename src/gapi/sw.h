@@ -40,7 +40,7 @@ namespace GAPI {
     #else
         typedef uint32 ColorSW;
     #endif
-    typedef uint32 DepthSW;
+    typedef uint16 DepthSW;
 
     uint8   *swLightmap;
     uint8   swLightmapNone[32 * 256];
@@ -383,7 +383,7 @@ namespace GAPI {
         int32 x2 = R.x >> 16;
 
         int32 f = x2 - x1;
-        if (f == 0) return;
+        if (f <= 0) return;
 
         VertexSW dS = (R - L) / f;
 
@@ -399,10 +399,14 @@ namespace GAPI {
             x1 = swClipRect.x;
         }
         if (x2 > swClipRect.z) x2 = swClipRect.z;
+        if (x1 >= x2) return;
 
         int32 i = y * Core::width;
-        DepthSW* pDepth = &swDepth[i + x1];
-        ColorSW* pColor = &swColor[i + x1];
+        DepthSW * __restrict__ pDepth = &swDepth[i + x1];
+        ColorSW * __restrict__ pColor = &swColor[i + x1];
+        const uint8 * __restrict__ tileIndex = curTile->index;
+        const uint8 * __restrict__ lightmap = swLightmap;
+        const ColorSW * __restrict__ palette = swPalette;
 
     #ifdef DITHER_FILTER
         const int *dithY = uvDither + ((y & 1) * 4);
@@ -415,18 +419,18 @@ namespace GAPI {
             if (*pDepth >= z) {
             #ifdef DITHER_FILTER
                 const int *dithX = dithY + (x & 1);
-                uint32 u = uint32(su + dithX[0]) >> 16;
-                uint32 v = uint32(sv + dithX[2]) >> 16;
+                uint32 u = (uint32(su + dithX[0]) >> 16) & 0xFF;
+                uint32 v = (uint32(sv + dithX[2]) >> 16) & 0xFF;
             #else
-                uint32 u = uint32(su) >> 16;
-                uint32 v = uint32(sv) >> 16;
+                uint32 u = (uint32(su) >> 16) & 0xFF;
+                uint32 v = (uint32(sv) >> 16) & 0xFF;
             #endif
 
-                uint8 index = curTile->index[(v << 8) + u];
+                uint8 index = tileIndex[(v << 8) | u];
 
                 if (index != 0) {
-                    index = swLightmap[((sl >> 11) & ~0xFF) + index];
-                    *pColor = swPalette[index];
+                    index = lightmap[((sl >> 11) & 0x1F00) | index];
+                    *pColor = palette[index];
                     *pDepth = z;
                 }
             }
@@ -596,25 +600,38 @@ namespace GAPI {
     }
 
     void applyLighting(VertexSW &result, const Vertex &vertex, float depth) {
-        vec3 coord  = vec3(float(vertex.coord.x), float(vertex.coord.y), float(vertex.coord.z));
-        vec3 normal = vec3(float(vertex.normal.x), float(vertex.normal.y), float(vertex.normal.z)).normal();
-        float lighting = 0.0f;
-        for (int i = 0; i < lightsCount; i++) {
-            LightSW &light = lightsRel[i];
-            vec3 dir = (light.pos - coord) * light.radius;
-            float att = dir.length2();
-            float lum = normal.dot(dir / sqrtf(att));
-            lighting += (max(0.0f, lum) * max(0.0f, 1.0f - att)) * light.intensity;
+        if (lightsCount > 0) {
+            vec3 coord  = vec3(float(vertex.coord.x), float(vertex.coord.y), float(vertex.coord.z));
+            vec3 normal = vec3(float(vertex.normal.x), float(vertex.normal.y), float(vertex.normal.z)).normal();
+            float lighting = 0.0f;
+            for (int i = 0; i < lightsCount; i++) {
+                LightSW &light = lightsRel[i];
+                vec3 dir = (light.pos - coord) * light.radius;
+                float att = dir.length2();
+                if (att < 1.0f) {
+                    float lum = normal.dot(dir / sqrtf(att));
+                    lighting += (max(0.0f, lum) * (1.0f - att)) * light.intensity;
+                }
+            }
+
+            lighting += result.l;
+
+            depth -= SW_FOG_START;
+            if (depth > 0.0f) {
+                const float invFogDist = 1.0f / (SW_MAX_DIST - SW_FOG_START);
+                lighting *= clamp(1.0f - depth * invFogDist, 0.0f, 1.0f);
+            }
+
+            result.l = (255 - min(255, int32(lighting))) << 16;
+        } else {
+            float lighting = float(result.l);
+            depth -= SW_FOG_START;
+            if (depth > 0.0f) {
+                const float invFogDist = 1.0f / (SW_MAX_DIST - SW_FOG_START);
+                lighting *= clamp(1.0f - depth * invFogDist, 0.0f, 1.0f);
+            }
+            result.l = (255 - min(255, int32(lighting))) << 16;
         }
-
-        lighting += result.l;
-
-        depth -= SW_FOG_START;
-        if (depth > 0.0f) {
-            lighting *= clamp(1.0f - depth / (SW_MAX_DIST - SW_FOG_START), 0.0f, 1.0f);
-        }
-
-        result.l = (255 - min(255, int32(lighting))) << 16;
     }
 
     bool transform(const Index *indices, const Vertex *vertices, int iStart, int iCount, int vStart) {
@@ -660,9 +677,10 @@ namespace GAPI {
                 continue;
             }
 
-            c.x /= c.w;
-            c.y /= c.w;
-            c.z /= c.w;
+            float invW = 1.0f / c.w;
+            c.x *= invW;
+            c.y *= invW;
+            c.z *= invW;
             c.x = clamp(c.x, -16384.0f, 16384.0f);
             c.y = clamp(c.y, -16384.0f, 16384.0f);
 

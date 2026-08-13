@@ -219,6 +219,8 @@ bool retro_load_game(const struct retro_game_info *info) {
     if (log_cb) log_cb(RETRO_LOG_INFO, "[OpenLara] contentDir: '%s'\n", contentDir);
 
     Game::init(level_path);
+    Core::settings.audio.reverb = false;
+    Core::settings.audio.subtitles = false;
     GAPI::resize(); // Allocate depth buffer
     return true;
 }
