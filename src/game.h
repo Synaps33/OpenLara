@@ -194,15 +194,25 @@ namespace Game {
     }
 
     void deinit() {
+        if (!inventory && !level) return;
         freeSaveSlots();
 
         #ifdef DEBUG_RENDER
             Debug::deinit();
         #endif
-        delete inventory;
-        delete level;
+        if (inventory) {
+            delete inventory;
+            inventory = NULL;
+        }
+        if (level) {
+            delete level;
+            level = NULL;
+        }
         UI::deinit();
-        delete shaderCache;
+        if (shaderCache) {
+            delete shaderCache;
+            shaderCache = NULL;
+        }
         Core::deinit();
     }
 

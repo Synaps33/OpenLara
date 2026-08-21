@@ -101,6 +101,14 @@
     #define DYNGEOM_NO_VBO
     #define INV_GAMEPAD_ONLY
     #define INV_STEREO
+#elif defined(SF2000) || defined(GB300V2) || defined(_OS_SF2000)
+    #define _OS_SF2000  1
+    #define _GAPI_SW    1
+    #undef OS_PTHREAD_MT
+    #undef USE_CUBEMAP_MIPS
+    #define INV_SINGLE_PLAYER
+    #define INV_GAMEPAD_NO_TRIGGER
+    #define INV_GAMEPAD_ONLY
 #elif __BITTBOY__ || __MIYOO__
     #define _OS_BITTBOY 1
     #define _OS_LINUX   1
@@ -1099,14 +1107,14 @@ namespace Core {
     }
 
     void deinit() {
-        delete eyeTex[0];
-        delete eyeTex[1];
-        delete whiteTex;
-        delete whiteCube;
-        delete blackTex;
-        delete ditherTex;
-        delete noiseTex;
-        delete perlinTex;
+        if (eyeTex[0]) { delete eyeTex[0]; eyeTex[0] = NULL; }
+        if (eyeTex[1]) { delete eyeTex[1]; eyeTex[1] = NULL; }
+        if (whiteTex) { delete whiteTex; whiteTex = NULL; }
+        if (whiteCube) { delete whiteCube; whiteCube = NULL; }
+        if (blackTex) { delete blackTex; blackTex = NULL; }
+        if (ditherTex) { delete ditherTex; ditherTex = NULL; }
+        if (noiseTex) { delete noiseTex; noiseTex = NULL; }
+        if (perlinTex) { delete perlinTex; perlinTex = NULL; }
 
         GAPI::deinit();
         NAPI::deinit();

@@ -80,8 +80,39 @@
     #define cosf(x)         vfpu_cosf(x)
     #define atan2f(x, y)    vfpu_atan2f(x, y)
     #define sincos(a, s, c) vfpu_sincos(a, s, c)
+#elif defined(SF2000) || defined(GB300V2) || defined(_OS_SF2000)
+    namespace FastTrigInternal {
+        static float fastSinTable[1025];
+        static bool fastTrigInited = false;
+
+        static inline void initFastTrig() {
+            if (fastTrigInited) return;
+            for (int i = 0; i <= 1024; i++) {
+                fastSinTable[i] = sinf((float)i * (6.28318530717958647692f / 1024.0f));
+            }
+            fastTrigInited = true;
+        }
+
+        static inline void sincos(float rad, float *s, float *c) {
+            if (!fastTrigInited) initFastTrig();
+            float norm = rad * (1024.0f / 6.28318530717958647692f);
+            int idx = (int)norm;
+            if (norm < 0.0f) idx--;
+            float frac = norm - (float)idx;
+            int i0_s = idx & 1023;
+            int i1_s = (idx + 1) & 1023;
+            int i0_c = (idx + 256) & 1023;
+            int i1_c = (idx + 257) & 1023;
+            *s = fastSinTable[i0_s] + (fastSinTable[i1_s] - fastSinTable[i0_s]) * frac;
+            *c = fastSinTable[i0_c] + (fastSinTable[i1_c] - fastSinTable[i0_c]) * frac;
+        }
+    }
+
+    inline void sincos(float r, float *s, float *c) {
+        FastTrigInternal::sincos(r, s, c);
+    }
 #else
-    void sincos(float r, float *s, float *c) {
+    inline void sincos(float r, float *s, float *c) {
         *s = sinf(r);
         *c = cosf(r);
     }
@@ -2430,6 +2461,18 @@ void osRWLockWrite(void *obj) {
 void osRWUnlockWrite(void *obj) {
     pthread_rwlock_unlock((pthread_rwlock_t*)obj);
 }
+#else
+inline void* osMutexInit() { return NULL; }
+inline void osMutexFree(void *obj) {}
+inline void osMutexLock(void *obj) {}
+inline void osMutexUnlock(void *obj) {}
+
+inline void* osRWLockInit() { return NULL; }
+inline void osRWLockFree(void *obj) {}
+inline void osRWLockRead(void *obj) {}
+inline void osRWUnlockRead(void *obj) {}
+inline void osRWLockWrite(void *obj) {}
+inline void osRWUnlockWrite(void *obj) {}
 #endif
 
 

@@ -26,9 +26,6 @@
     #define CONV_COLOR(r,g,b) ((r << 16) | (g << 8) | b)
 #endif
 
-#define SW_MAX_DIST  (20.0f * 1024.0f)
-#define SW_FOG_START (12.0f * 1024.0f)
-
 namespace GAPI {
 
     using namespace Core;
@@ -41,6 +38,21 @@ namespace GAPI {
         typedef uint32 ColorSW;
     #endif
     typedef uint16 DepthSW;
+
+    static float swMaxDist = 8.0f * 1024.0f; // Default: Short (8192)
+    static float swFogStart = 5.0f * 1024.0f;
+    static float swInvFogDist = 1.0f / (8.0f * 1024.0f - 5.0f * 1024.0f);
+    static bool  swDitherFilter = false;
+
+    inline void setDrawDistance(float maxDist, float fogStart) {
+        swMaxDist = maxDist;
+        swFogStart = fogStart;
+        swInvFogDist = (maxDist > fogStart) ? (1.0f / (maxDist - fogStart)) : 1.0f;
+    }
+
+    inline void setDitherFilter(bool enabled) {
+        swDitherFilter = enabled;
+    }
 
     uint8   *swLightmap;
     uint8   swLightmapNone[32 * 256];
@@ -228,6 +240,16 @@ namespace GAPI {
         }
     };
 
+    static DepthSW swDepthBuffer[320 * 240] __attribute__((aligned(4)));
+    static uint32  invTable[513];
+    static bool    invTableInited = false;
+
+    inline int32 getInv(int32 v) {
+        if (uint32(v) <= 512) return invTable[v];
+        if (v == 0) return 65536;
+        return (1 << 16) / v;
+    }
+
     Array<VertexSW> swVertices;
     Array<Index>    swIndices;
     Array<int32>    swTriangles;
@@ -236,11 +258,23 @@ namespace GAPI {
     void init() {
         LOG("Renderer : %s\n", "Software");
         LOG("Version  : %s\n", "0.1");
-        swDepth = NULL;
+        swDepth = swDepthBuffer;
+
+        if (!invTableInited) {
+            invTable[0] = (1 << 16);
+            for (int i = 1; i <= 512; i++) {
+                invTable[i] = (1 << 16) / i;
+            }
+            invTableInited = true;
+        }
+
+        swVertices.reserve(1024);
+        swIndices.reserve(2048);
+        swTriangles.reserve(1024);
+        swQuads.reserve(1024);
     }
 
     void deinit() {
-        delete[] swDepth;
         swVertices.clear();
         swIndices.clear();
         swTriangles.clear();
@@ -248,8 +282,7 @@ namespace GAPI {
     }
 
     void resize() {
-        delete[] swDepth;
-        swDepth = new DepthSW[Core::width * Core::height];
+        swDepth = swDepthBuffer;
     }
 
     inline mat4::ProjRange getProjRange() {
@@ -359,14 +392,12 @@ namespace GAPI {
     }
 
     inline void step(VertexSW &v, const VertexSW &d) {
-        //v.w += d.w;
         v.u += d.u;
         v.v += d.v;
         v.l += d.l;
     }
 
     inline void step(VertexSW &v, const VertexSW &d, int32 count) {
-        //v.w += d.w * count;
         v.u += d.u * count;
         v.v += d.v * count;
         v.l += d.l * count;
@@ -383,23 +414,18 @@ namespace GAPI {
         int32 x2 = R.x >> 16;
 
         int32 f = x2 - x1;
-        if (f <= 0) return;
+        if (f == 0) return;
 
         VertexSW dS = (R - L) / f;
-
-        int32 sz = L.z, su = L.u, sv = L.v, sl = L.l;
-        int32 dsz = dS.z, dsu = dS.u, dsv = dS.v, dsl = dS.l;
+        VertexSW S  = L;
 
         if (x1 < swClipRect.x) {
-            int32 diff = swClipRect.x - x1;
-            sz += dsz * diff;
-            su += dsu * diff;
-            sv += dsv * diff;
-            sl += dsl * diff;
+            x1 = swClipRect.x - x1;
+            S.z += dS.z * x1;
+            step(S, dS, x1);
             x1 = swClipRect.x;
         }
         if (x2 > swClipRect.z) x2 = swClipRect.z;
-        if (x1 >= x2) return;
 
         int32 i = y * Core::width;
         DepthSW * __restrict__ pDepth = &swDepth[i + x1];
@@ -408,36 +434,33 @@ namespace GAPI {
         const uint8 * __restrict__ lightmap = swLightmap;
         const ColorSW * __restrict__ palette = swPalette;
 
-    #ifdef DITHER_FILTER
-        const int *dithY = uvDither + ((y & 1) * 4);
-    #endif
+        for (int x = i + x1; x < i + x2; x++) {
+            S.z += dS.z;
 
-        for (int x = x1; x < x2; x++) {
-            sz += dsz;
-            DepthSW z = DepthSW(uint32(sz) >> 16);
+            DepthSW z = DepthSW(uint32(S.z) >> 16);
 
             if (*pDepth >= z) {
-            #ifdef DITHER_FILTER
-                const int *dithX = dithY + (x & 1);
-                uint32 u = (uint32(su + dithX[0]) >> 16) & 0xFF;
-                uint32 v = (uint32(sv + dithX[2]) >> 16) & 0xFF;
-            #else
-                uint32 u = (uint32(su) >> 16) & 0xFF;
-                uint32 v = (uint32(sv) >> 16) & 0xFF;
-            #endif
+                uint32 u;
+                uint32 v;
+                if (swDitherFilter) {
+                    const int *dithX = uvDither + ((y & 1) * 4) + (x & 1);
+                    u = uint32(S.u + dithX[0]) >> 16;
+                    v = uint32(S.v + dithX[2]) >> 16;
+                } else {
+                    u = uint32(S.u) >> 16;
+                    v = uint32(S.v) >> 16;
+                }
 
-                uint8 index = tileIndex[(v << 8) | u];
+                uint8 index = tileIndex[(v << 8) + u];
 
                 if (index != 0) {
-                    index = lightmap[((sl >> 11) & 0x1F00) | index];
+                    index = lightmap[((S.l >> (16 + 3)) << 8) + index];
                     *pColor = palette[index];
                     *pDepth = z;
                 }
             }
 
-            su += dsu;
-            sv += dsv;
-            sl += dsl;
+            step(S, dS);
             pDepth++;
             pColor++;
         }
@@ -616,21 +639,19 @@ namespace GAPI {
 
             lighting += result.l;
 
-            depth -= SW_FOG_START;
-            if (depth > 0.0f) {
-                const float invFogDist = 1.0f / (SW_MAX_DIST - SW_FOG_START);
-                lighting *= clamp(1.0f - depth * invFogDist, 0.0f, 1.0f);
+            if (depth > swFogStart) {
+                lighting *= clamp(1.0f - (depth - swFogStart) * swInvFogDist, 0.0f, 1.0f);
             }
 
             result.l = (255 - min(255, int32(lighting))) << 16;
         } else {
-            float lighting = float(result.l);
-            depth -= SW_FOG_START;
-            if (depth > 0.0f) {
-                const float invFogDist = 1.0f / (SW_MAX_DIST - SW_FOG_START);
-                lighting *= clamp(1.0f - depth * invFogDist, 0.0f, 1.0f);
+            if (depth <= swFogStart) {
+                result.l = (255 - min(255, result.l)) << 16;
+            } else {
+                float fog = clamp(1.0f - (depth - swFogStart) * swInvFogDist, 0.0f, 1.0f);
+                int32 lighting = int32(float(result.l) * fog);
+                result.l = (255 - min(255, lighting)) << 16;
             }
-            result.l = (255 - min(255, int32(lighting))) << 16;
         }
     }
 
@@ -667,7 +688,7 @@ namespace GAPI {
             vec4 c;
             c = swMatrix * vec4(vertex.coord.x, vertex.coord.y, vertex.coord.z, 1.0f);
 
-            if (c.w < 0.0f || c.w > SW_MAX_DIST) { // skip primitive
+            if (c.w < 0.0f || c.w > swMaxDist) { // skip primitive
                 if (isTriangle) {
                     i += 3 - vIndex;
                 } else {

@@ -603,13 +603,16 @@ struct Inventory {
         }
     }
 
-    Inventory() : game(NULL), title(NULL), itemsCount(0) {
+    Inventory() : game(NULL), title(NULL), video(NULL), itemsCount(0) {
         memset(background, 0, sizeof(background));
         reset();
     }
 
     ~Inventory() {
-        delete video;
+        if (video) {
+            delete video;
+            video = NULL;
+        }
         clear();
     }
 

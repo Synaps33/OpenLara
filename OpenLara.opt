@@ -1,0 +1,50 @@
+### [openlara_draw_distance] :[Short] :[Extreme|Ultra Short|Very Short|Short|Medium|Default|Long]
+openlara_draw_distance = "Short"
+
+### [openlara_resolution] :[50%] :[25%|50%|75%|100%]
+openlara_resolution = "50%"
+
+### [openlara_framerate] :[30 FPS] :[30 FPS|15 FPS (Frameskip)]
+openlara_framerate = "30 FPS"
+
+### [openlara_dither] :[Disabled] :[Disabled|Enabled]
+openlara_dither = "Disabled"
+
+### [openlara_audio] :[Enabled] :[Enabled|Disabled]
+openlara_audio = "Enabled"
+
+### [openlara_controls] :[Classic] :[Classic|Modern]
+openlara_controls = "Classic"
+
+### [sf2000_enable_frogui_patch] :[true] :[true|false]
+sf2000_enable_frogui_patch = "true"
+
+### [sf2000_show_fps] :[false] :[true|false]
+sf2000_show_fps = "false"
+
+### [sf2000_enable_osd] :[true] :[true|false]
+sf2000_enable_osd = "true"
+
+### [sf2000_osd_small_messages] :[true] :[true|false]
+sf2000_osd_small_messages = "true"
+
+### [sf2000_tearing_fix] :[off] :[off|rotate|repeat|split]
+sf2000_tearing_fix = "off"
+
+### [sf2000_scaling_mode] :[core_provided] :[stock|core_provided|full_screen|square_pixels|custom]
+sf2000_scaling_mode = "core_provided"
+
+### [sf2000_scaling_filtered] :[true] :[true|false]
+sf2000_scaling_filtered = "true"
+
+### [sf2000_enable_darken_filter] :[false] :[true|false]
+sf2000_enable_darken_filter = "false"
+
+### [sf2000_darken_percentage] :[20] :[10|20|30|40|50]
+sf2000_darken_percentage = "20"
+
+### [sf2000_enable_darken_hotkey] :[false] :[true|false]
+sf2000_enable_darken_hotkey = "false"
+
+### [sf2000_enable_screenshot_hotkey] :[true] :[true|false]
+sf2000_enable_screenshot_hotkey = "true"

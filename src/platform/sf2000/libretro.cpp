@@ -4,11 +4,8 @@
 #include <sys/time.h>
 #include "libretro.h"
 
-#define _GAPI_SW 1
-#define _OS_LINUX 1 // to trigger RGB565 mode in sw.h
-
-#include "src/core.h"
-#include "src/game.h"
+#include "core.h"
+#include "game.h"
 #include <new>
 
 static retro_video_refresh_t video_cb;
@@ -45,7 +42,7 @@ void operator delete[](void* p) noexcept {
     free(p);
 }
 
-static uint16_t framebuffer[320 * 240];
+static uint16_t framebuffer[320 * 240] __attribute__((aligned(4)));
 static int current_width = 320;
 static int current_height = 240;
 
@@ -62,11 +59,6 @@ int osGetTimeMS() {
     return (int)((t.tv_sec - startTime) * 1000 + t.tv_usec / 1000);
 }
 
-void* osMutexInit() { return NULL; }
-void osMutexFree(void *obj) {}
-void osMutexLock(void *obj) {}
-void osMutexUnlock(void *obj) {}
-
 bool osJoyReady(int index) { return index == 0; }
 void osJoyVibrate(int index, float L, float R) {}
 
@@ -76,7 +68,8 @@ const char* osFixFileName(const char* fileName) {
 
 #define SND_FRAME_SIZE 4
 #define SND_FRAMES 1024
-Sound::Frame *sndData = NULL;
+static Sound::Frame sndDataBuffer[SND_FRAMES] __attribute__((aligned(4)));
+Sound::Frame *sndData = sndDataBuffer;
 
 void retro_set_environment(retro_environment_t cb) {
     environ_cb = cb;
@@ -86,8 +79,10 @@ void retro_set_environment(retro_environment_t cb) {
     }
 
     struct retro_variable vars[] = {
+        { "openlara_draw_distance", "Draw Distance; Short|Very Short|Ultra Short|Extreme|Medium|Default|Long" },
         { "openlara_resolution", "Resolution; 50%|75%|100%|25%" },
         { "openlara_framerate", "Framerate; 30 FPS|15 FPS (Frameskip)" },
+        { "openlara_dither", "Dither Filter; Disabled|Enabled" },
         { "openlara_audio", "Audio; Enabled|Disabled" },
         { "openlara_controls", "Controls; Classic|Modern" },
         { NULL, NULL },
@@ -108,8 +103,8 @@ void retro_init(void) {
     gettimeofday(&t, NULL);
     startTime = t.tv_sec;
 
-    sndData = new Sound::Frame[SND_FRAMES];
-    memset(sndData, 0, SND_FRAMES * SND_FRAME_SIZE);
+    memset(sndDataBuffer, 0, sizeof(sndDataBuffer));
+    sndData = sndDataBuffer;
 
     GAPI::swColor = framebuffer;
     
@@ -121,12 +116,8 @@ void retro_init(void) {
 
 void retro_deinit(void) {
     if (!is_inited) return;
-    if (sndData) {
-        delete[] sndData;
-        sndData = NULL;
-    }
-    Game::deinit();
     is_inited = false;
+    Game::deinit();
 }
 
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
@@ -154,6 +145,32 @@ void retro_reset(void) {}
 
 void update_settings() {
     struct retro_variable var = {0};
+
+    var.key = "openlara_draw_distance";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "Extreme") == 0) {
+            GAPI::setDrawDistance(3.0f * 1024.0f, 1.5f * 1024.0f);
+        } else if (strcmp(var.value, "Ultra Short") == 0) {
+            GAPI::setDrawDistance(4.5f * 1024.0f, 2.5f * 1024.0f);
+        } else if (strcmp(var.value, "Very Short") == 0) {
+            GAPI::setDrawDistance(6.0f * 1024.0f, 4.0f * 1024.0f);
+        } else if (strcmp(var.value, "Short") == 0) {
+            GAPI::setDrawDistance(8.0f * 1024.0f, 5.0f * 1024.0f);
+        } else if (strcmp(var.value, "Medium") == 0) {
+            GAPI::setDrawDistance(12.0f * 1024.0f, 8.0f * 1024.0f);
+        } else if (strcmp(var.value, "Default") == 0) {
+            GAPI::setDrawDistance(15.0f * 1024.0f, 10.0f * 1024.0f);
+        } else if (strcmp(var.value, "Long") == 0) {
+            GAPI::setDrawDistance(20.0f * 1024.0f, 12.0f * 1024.0f);
+        }
+    } else {
+        GAPI::setDrawDistance(8.0f * 1024.0f, 5.0f * 1024.0f); // Default Short (8m)
+    }
+
+    var.key = "openlara_dither";
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        GAPI::setDitherFilter(strcmp(var.value, "Enabled") == 0);
+    }
 
     var.key = "openlara_resolution";
     if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
@@ -226,12 +243,16 @@ bool retro_load_game(const struct retro_game_info *info) {
 }
 
 bool retro_load_game_special(unsigned game_type, const struct retro_game_info *info, size_t num_info) { return false; }
-void retro_unload_game(void) { retro_deinit(); }
+void retro_unload_game(void) { /* deinit handled by wrap_retro_deinit */ }
 unsigned retro_get_region(void) { return RETRO_REGION_NTSC; }
 
 void process_inputs() {
     if (input_poll_cb) input_poll_cb();
     
+    int start_state = input_state_cb ? input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START) : 0;
+    int select_state = input_state_cb ? input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT) : 0;
+    bool menu_combo = (start_state != 0 && select_state != 0);
+
     struct {
         unsigned libretro_id;
         JoyKey openlara_id;
@@ -271,11 +292,17 @@ void process_inputs() {
     if (opt_controls == 1) {
         for (int i = 0; i < sizeof(mapping_modern) / sizeof(mapping_modern[0]); i++) {
             int state = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, mapping_modern[i].libretro_id);
+            if (menu_combo && (mapping_modern[i].libretro_id == RETRO_DEVICE_ID_JOYPAD_START || mapping_modern[i].libretro_id == RETRO_DEVICE_ID_JOYPAD_SELECT)) {
+                state = 0;
+            }
             Input::setJoyDown(0, mapping_modern[i].openlara_id, state);
         }
     } else {
         for (int i = 0; i < sizeof(mapping_classic) / sizeof(mapping_classic[0]); i++) {
             int state = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, mapping_classic[i].libretro_id);
+            if (menu_combo && (mapping_classic[i].libretro_id == RETRO_DEVICE_ID_JOYPAD_START || mapping_classic[i].libretro_id == RETRO_DEVICE_ID_JOYPAD_SELECT)) {
+                state = 0;
+            }
             Input::setJoyDown(0, mapping_classic[i].openlara_id, state);
         }
     }
@@ -285,7 +312,11 @@ static int frame_counter = 0;
 
 void retro_run(void) {
     if (Core::isQuit) {
-        environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, NULL);
+        // On GB300/SF2000, shutdown is handled by firmware, not by the core.
+        // Just render a blank frame and return.
+        if (video_cb) {
+            video_cb(framebuffer, current_width, current_height, current_width * 2);
+        }
         return;
     }
 
@@ -310,13 +341,11 @@ void retro_run(void) {
     if (Game::update()) {
         if (render_this_frame) {
             Game::render();
-            video_cb(framebuffer, current_width, current_height, current_width * 2);
-        } else {
-            // Skips drawing to screen buffer
-            video_cb(NULL, current_width, current_height, current_width * 2);
         }
-    } else {
-        video_cb(NULL, current_width, current_height, current_width * 2);
+    }
+    
+    if (video_cb) {
+        video_cb(framebuffer, current_width, current_height, current_width * 2);
     }
     
     if (audio_batch_cb) {

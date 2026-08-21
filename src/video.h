@@ -1486,7 +1486,7 @@ struct Video {
         }
     }
 
-    Video(Stream *stream, TR::LevelID id) : sample(NULL), decoder(NULL), stepTimer(0.0f), time(0.0f), isPlaying(false), needUpdate(false) {
+    Video(Stream *stream, TR::LevelID id) : sample(NULL), decoder(NULL), frameData(NULL), stepTimer(0.0f), time(0.0f), isPlaying(false), needUpdate(false) {
         frameTex[0] = frameTex[1] = NULL;
 
         if (!stream) return;
@@ -1508,6 +1508,8 @@ struct Video {
             decoder = new STR(stream);
         }
 
+        if (!decoder || decoder->width <= 0 || decoder->height <= 0) return;
+
         frameData = new Color32[decoder->width * decoder->height];
         memset(frameData, 0, decoder->width * decoder->height * sizeof(Color32));
 
@@ -1517,13 +1519,12 @@ struct Video {
 
         if (!TR::getVideoTrack(id, playAsync, this)) {
             sample = Sound::play(decoder);
-            sample->pitch = pitch;
             if (sample) {
                 sample->pitch = pitch;
             }
         }
 
-        step      = 1.0f / decoder->fps;
+        step      = (decoder->fps > 0.0f) ? (1.0f / decoder->fps) : 0.0333f;
         stepTimer = step;
         time      = 0.0f;
         isPlaying = true;
@@ -1536,11 +1537,24 @@ struct Video {
                 sample->decoder = NULL;
             }
             sample->stop();
+            sample = NULL;
         }
-        delete decoder;
-        delete frameTex[0];
-        delete frameTex[1];
-        delete[] frameData;
+        if (decoder) {
+            delete decoder;
+            decoder = NULL;
+        }
+        if (frameTex[0]) {
+            delete frameTex[0];
+            frameTex[0] = NULL;
+        }
+        if (frameTex[1]) {
+            delete frameTex[1];
+            frameTex[1] = NULL;
+        }
+        if (frameData) {
+            delete[] frameData;
+            frameData = NULL;
+        }
     }
 
     void update() {
